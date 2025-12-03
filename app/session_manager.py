@@ -11,7 +11,7 @@ from .account_manager import account_manager
 from .jwt_utils import get_jwt_for_account
 from .exceptions import AccountRequestError, AccountError
 from .utils import raise_for_account_response
-from .media_handler import download_image_from_url
+from .media_handler import download_image_from_url, download_file_from_url
 
 
 def get_headers(jwt: str) -> dict:
@@ -303,20 +303,26 @@ def build_download_url(session_name: str, file_id: str) -> str:
     return f"https://biz-discoveryengine.googleapis.com/v1alpha/{session_name}:downloadFile?fileId={file_id}&alt=media"
 
 
-def upload_inline_image_to_gemini(jwt: str, session_name: str, team_id: str, 
-                                   image_data: Dict, proxy: str = None, account_idx: Optional[int] = None) -> Optional[str]:
-    """上传内联图片到 Gemini，返回 fileId"""
+
+def upload_inline_file_to_gemini(jwt: str, session_name: str, team_id: str, 
+                                 file_data: Dict, proxy: str = None, account_idx: Optional[int] = None) -> Optional[str]:
+    """上传内联文件（图片/视频/音频）到 Gemini，返回 fileId"""
     try:
-        ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+        ext_map = {
+            "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
+            "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+            "audio/mpeg": ".mp3", "audio/wav": ".wav", "audio/ogg": ".ogg"
+        }
         
-        if image_data.get("type") == "base64":
-            mime_type = image_data.get("mime_type", "image/png")
-            file_content = base64.b64decode(image_data.get("data", ""))
-            ext = ext_map.get(mime_type, ".png")
+        if file_data.get("type") == "base64":
+            mime_type = file_data.get("mime_type", "application/octet-stream")
+            file_content = base64.b64decode(file_data.get("data", ""))
+            ext = ext_map.get(mime_type, ".bin")
             filename = f"inline_{uuid.uuid4().hex[:8]}{ext}"
-        elif image_data.get("type") == "url":
-            file_content, mime_type = download_image_from_url(image_data.get("url"), proxy)
-            ext = ext_map.get(mime_type, ".png")
+        elif file_data.get("type") == "url" or file_data.get("file_url"):
+            url = file_data.get("url") or file_data.get("file_url")
+            file_content, mime_type = download_file_from_url(url, proxy)
+            ext = ext_map.get(mime_type, ".bin")
             filename = f"url_{uuid.uuid4().hex[:8]}{ext}"
         else:
             return None
@@ -325,6 +331,8 @@ def upload_inline_image_to_gemini(jwt: str, session_name: str, team_id: str,
     except AccountError:
         # 让账号相关错误向上抛出，以便触发冷却
         raise
-    except Exception:
+    except Exception as e:
+        from .logger import print
+        print(f"[错误] 上传内联文件失败: {e}")
         return None
 

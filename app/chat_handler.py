@@ -4,6 +4,7 @@
 
 import json
 import base64
+import os
 import uuid
 import requests
 from typing import List, Optional, Dict, Any, Generator
@@ -318,7 +319,7 @@ def stream_chat_realtime_generator(jwt: str, sess_name: str, message: str,
                         
                         image_base_url = account_manager.config.get("image_base_url", "").strip() if account_manager else ""
                         if not image_base_url:
-                            image_base_url = upload_endpoint.rstrip("/").replace("/upload", "")
+                            image_base_url = os.path.dirname(upload_endpoint.rstrip('/'))
                         
                         if not image_base_url.endswith("/"):
                             image_base_url += "/"
@@ -665,7 +666,7 @@ def stream_chat_with_images(jwt: str, sess_name: str, message: str,
                             image_base_url = account_manager.config.get("image_base_url", "").strip() if account_manager else ""
                             if not image_base_url:
                                 # 从 upload_endpoint 推断（去掉 /upload）
-                                image_base_url = upload_endpoint.rstrip("/").replace("/upload", "")
+                                image_base_url = os.path.dirname(upload_endpoint.rstrip('/'))
                             
                             if not image_base_url.endswith("/"):
                                 image_base_url += "/"
@@ -754,7 +755,7 @@ def parse_generated_media(gen_img: Dict, result: ChatResponse, proxy: Optional[s
                 # 构建完整 URL
                 image_base_url = account_manager.config.get("image_base_url", "").strip() if account_manager else ""
                 if not image_base_url:
-                    image_base_url = upload_endpoint.rstrip("/").replace("/upload", "")
+                    image_base_url = os.path.dirname(upload_endpoint.rstrip('/'))
                 if not image_base_url.endswith("/"):
                     image_base_url += "/"
                 
@@ -828,7 +829,7 @@ def parse_image_from_content(content: Dict, result: ChatResponse, proxy: Optiona
                     # 构建完整 URL
                     image_base_url = account_manager.config.get("image_base_url", "").strip() if account_manager else ""
                     if not image_base_url:
-                        image_base_url = upload_endpoint.rstrip("/").replace("/upload", "")
+                        image_base_url = os.path.dirname(upload_endpoint.rstrip('/'))
                     if not image_base_url.endswith("/"):
                         image_base_url += "/"
                     
@@ -905,7 +906,7 @@ def parse_attachment(att: Dict, result: ChatResponse, proxy: Optional[str] = Non
                 # 构建完整 URL
                 image_base_url = account_manager.config.get("image_base_url", "").strip() if account_manager else ""
                 if not image_base_url:
-                    image_base_url = upload_endpoint.rstrip("/").replace("/upload", "")
+                    image_base_url = os.path.dirname(upload_endpoint.rstrip('/'))
                 if not image_base_url.endswith("/"):
                     image_base_url += "/"
                 

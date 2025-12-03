@@ -299,11 +299,16 @@ def extract_images_from_openai_content(content: Any) -> Tuple[str, List[Dict]]:
 
 def download_image_from_url(url: str, proxy: Optional[str] = None) -> Tuple[bytes, str]:
     """从URL下载图片，返回(图片数据, mime_type)"""
+    return download_file_from_url(url, proxy)
+
+
+def download_file_from_url(url: str, proxy: Optional[str] = None) -> Tuple[bytes, str]:
+    """从URL下载文件，返回(文件数据, mime_type)"""
     proxies = {"http": proxy, "https": proxy} if proxy else None
-    resp = requests.get(url, proxies=proxies, verify=False, timeout=60)
+    resp = requests.get(url, proxies=proxies, verify=False, timeout=120)
     resp.raise_for_status()
     
-    content_type = resp.headers.get("Content-Type", "image/png")
+    content_type = resp.headers.get("Content-Type", "application/octet-stream")
     # 提取主mime类型
     mime_type = content_type.split(";")[0].strip()
     

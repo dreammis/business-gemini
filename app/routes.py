@@ -45,7 +45,7 @@ from .auth import (
 from . import auth
 
 # 导入会话管理
-from .session_manager import ensure_session_for_account, upload_file_to_gemini, upload_inline_image_to_gemini
+from .session_manager import ensure_session_for_account, upload_file_to_gemini, upload_inline_file_to_gemini
 
 # 导入聊天处理
 from .chat_handler import (
@@ -372,6 +372,14 @@ def register_routes(app):
                                     fid = file_obj.get('file_id') or file_obj.get('id')
                                     if fid:
                                         input_file_ids.append(fid)
+                                # 新增：支持 file_url
+                                elif item.get('type') == 'file' and item.get('file_url'):
+                                    # 将 file_url 视为需要下载的内联文件
+                                    # 暂时存入 input_images 列表（虽然名字叫 images，但 upload_inline_file_to_gemini 支持所有类型）
+                                    input_images.append({
+                                        "type": "url",
+                                        "file_url": item.get('file_url')
+                                    })
             
             for prompt in prompts:
                 if prompt.get('role') == 'user':
@@ -518,7 +526,7 @@ def register_routes(app):
                     proxy = get_proxy()
                     
                     for img in input_images:
-                        uploaded_file_id = upload_inline_image_to_gemini(jwt, session, team_id, img, proxy, account_idx)
+                        uploaded_file_id = upload_inline_file_to_gemini(jwt, session, team_id, img, proxy, account_idx)
                         if uploaded_file_id:
                             gemini_file_ids.append(uploaded_file_id)
                     
