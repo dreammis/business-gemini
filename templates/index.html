@@ -295,6 +295,30 @@
                                 </div>
                             </div>
                         </div>
+                        
+                        <div class="settings-section">
+                            <h3>会话管理</h3>
+                            <div class="form-group">
+                                <div style="display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--card-bg); border: 2px solid var(--border); border-radius: var(--radius-md); transition: var(--transition-ease);" id="deleteSessionContainer">
+                                    <div style="flex: 1;">
+                                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                                            <svg class="icon" style="width: 20px; height: 20px; color: var(--primary);"><use xlink:href="#icon-message"></use></svg>
+                                            <label style="font-size: 16px; font-weight: 600; color: var(--text-main); cursor: pointer; margin: 0;" for="deleteSessionAfterChat">对话后自动删除会话</label>
+                                        </div>
+                                        <small style="display: block; color: var(--text-muted); margin-left: 32px;">启用后，每次对话结束后会自动删除 Gemini 会话，释放资源。建议开启。</small>
+                                    </div>
+                                    <label class="toggle-switch" for="deleteSessionAfterChat" style="position: relative; display: inline-block; width: 56px; height: 32px; cursor: pointer; flex-shrink: 0;">
+                                        <input type="checkbox" id="deleteSessionAfterChat" style="opacity: 0; width: 0; height: 0;">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 12px;">
+                                <button type="button" class="btn btn-primary" onclick="saveSettings()">
+                                    保存设置
+                                </button>
+                            </div>
+                        </div>
 
                         <div class="settings-section">
                             <h3><svg class="icon" style="width: 1em; height: 1em; vertical-align: -2px; margin-right: 8px;"><use xlink:href="#icon-server"></use></svg>服务信息</h3>

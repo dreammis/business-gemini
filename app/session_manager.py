@@ -6,7 +6,7 @@ import base64
 import requests
 from typing import Optional, Dict
 
-from .config import CREATE_SESSION_URL, ADD_CONTEXT_FILE_URL
+from .config import CREATE_SESSION_URL, ADD_CONTEXT_FILE_URL, DELETE_SESSION_URL
 from .account_manager import account_manager
 from .jwt_utils import get_jwt_for_account
 from .exceptions import AccountRequestError, AccountError
@@ -336,3 +336,53 @@ def upload_inline_file_to_gemini(jwt: str, session_name: str, team_id: str,
         print(f"[错误] 上传内联文件失败: {e}")
         return None
 
+
+def delete_chat_session(jwt: str, team_id: str, session_name: str, proxy: str = None) -> bool:
+    """删除会话
+    
+    Args:
+        jwt: JWT 认证令牌
+        team_id: 团队ID
+        session_name: 会话名称 (e.g. "collections/default_collection/engines/agentspace-engine/sessions/xxx")
+        proxy: 代理地址
+        
+    Returns:
+        bool: 是否删除成功
+    """
+    # 调试日志已关闭
+    # print(f"[DEBUG][delete_chat_session] 开始删除会话: {session_name}")
+    start_time = time.time()
+    
+    body = {
+        "configId": team_id,
+        "additionalParams": {"token": "-"},
+        "deleteSessionRequest": {
+            "name": session_name
+        }
+    }
+    
+    proxies = {"http": proxy, "https": proxy} if proxy else None
+    
+    try:
+        resp = requests.post(
+            DELETE_SESSION_URL,
+            headers=get_headers(jwt),
+            json=body,
+            proxies=proxies,
+            verify=False,
+            timeout=30
+        )
+    except requests.RequestException as e:
+        # 删除失败不抛出异常，只记录日志
+        from .logger import print
+        print(f"[警告] 删除会话请求失败: {e}")
+        return False
+        
+    if resp.status_code != 200:
+        from .logger import print
+        print(f"[警告] 删除会话失败 - 状态码: {resp.status_code}, 响应: {resp.text[:200]}")
+        return False
+        
+    # 调试日志已关闭
+    # print(f"[DEBUG][delete_chat_session] 会话删除成功 - 耗时: {time.time() - start_time:.2f}秒")
+    return True

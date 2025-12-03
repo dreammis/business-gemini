@@ -23,7 +23,9 @@ CREATE_SESSION_URL = f"{BASE_URL}/widgetCreateSession"
 STREAM_ASSIST_URL = f"{BASE_URL}/widgetStreamAssist"
 LIST_FILE_METADATA_URL = f"{BASE_URL}/widgetListSessionFileMetadata"
 ADD_CONTEXT_FILE_URL = f"{BASE_URL}/widgetAddContextFile"
+DELETE_SESSION_URL = f"{BASE_URL}/widgetDeleteSession"
 GETOXSRF_URL = "https://business.gemini.google/auth/getoxsrf"
+API_SESSION_AUTO_DELETE = True
 
 # 账号错误冷却时间（秒）
 AUTH_ERROR_COOLDOWN_SECONDS = 900      # 凭证错误，15分钟

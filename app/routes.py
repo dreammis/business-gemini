@@ -26,7 +26,8 @@ from .websocket_manager import (
 )
 
 # 导入配置和常量
-from .config import IMAGE_CACHE_DIR, VIDEO_CACHE_DIR, CONFIG_FILE, PLAYWRIGHT_AVAILABLE, PLAYWRIGHT_BROWSER_INSTALLED
+from .config import IMAGE_CACHE_DIR, VIDEO_CACHE_DIR, CONFIG_FILE, PLAYWRIGHT_AVAILABLE, PLAYWRIGHT_BROWSER_INSTALLED, \
+    API_SESSION_AUTO_DELETE
 
 # 导入账号管理和文件管理
 from .account_manager import account_manager
@@ -45,7 +46,7 @@ from .auth import (
 from . import auth
 
 # 导入会话管理
-from .session_manager import ensure_session_for_account, upload_file_to_gemini, upload_inline_file_to_gemini
+from .session_manager import ensure_session_for_account, upload_file_to_gemini, upload_inline_file_to_gemini, delete_chat_session
 
 # 导入聊天处理
 from .chat_handler import (
@@ -665,6 +666,11 @@ def register_routes(app):
                         }
                         yield f"data: {json.dumps(end_chunk, ensure_ascii=False)}\n\n"
                         yield "data: [DONE]\n\n"
+                        
+                        # 删除会话
+                        if session and account_manager.config.get("delete_session_after_chat", True):
+                            # print(f"[聊天] 流式响应结束，删除会话: {session}")
+                            delete_chat_session(jwt, team_id, session, proxy)
                     except Exception as e:
                         # 错误处理
                         error_chunk = {
@@ -850,6 +856,12 @@ def register_routes(app):
                     )
                 except Exception:
                     pass  # 日志记录失败不应影响主流程
+                
+                # 删除会话
+                # 删除会话
+                if session and account_manager.config.get("delete_session_after_chat", True):
+                    # print(f"[聊天] 非流式响应结束，删除会话: {session}")
+                    delete_chat_session(jwt, team_id, session, proxy)
                 
                 return jsonify(response)
 
@@ -1749,6 +1761,8 @@ def register_routes(app):
                 set_log_level(data["log_level"], persist=True)
             except Exception as e:
                 return jsonify({"error": str(e)}), 400
+        if "delete_session_after_chat" in data:
+            account_manager.config["delete_session_after_chat"] = bool(data["delete_session_after_chat"])
         account_manager.save_config()
         return jsonify({"success": True})
     
