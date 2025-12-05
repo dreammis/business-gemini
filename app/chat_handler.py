@@ -514,7 +514,7 @@ def stream_chat_with_images(jwt: str, sess_name: str, message: str,
             json=body,
             proxies=proxies,
             verify=False,
-            timeout=300,  # 增加到 5 分钟，避免超时
+            timeout=600,  # 增加到 5 分钟，避免超时
             stream=True
         )
     except requests.RequestException as e:

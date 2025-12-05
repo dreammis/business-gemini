@@ -270,7 +270,7 @@ def upload_file_to_gemini(jwt: str, session_name: str, team_id: str,
             json=body,
             proxies=proxies,
             verify=False,
-            timeout=60
+            timeout=300
         )
     except requests.RequestException as e:
         raise AccountRequestError(f"文件上传请求失败: {e}") from e

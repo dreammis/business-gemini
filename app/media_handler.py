@@ -311,7 +311,11 @@ def download_file_from_url(url: str, proxy: Optional[str] = None) -> Tuple[bytes
     content_type = resp.headers.get("Content-Type", "application/octet-stream")
     # 提取主mime类型
     mime_type = content_type.split(";")[0].strip()
-    
+    if mime_type == 'application/octet-stream':
+        guessed_type, _ = mimetypes.guess_type(url)
+        if guessed_type:
+            mime_type = guessed_type
+
     return resp.content, mime_type
 
 
