@@ -1609,3 +1609,64 @@ document.querySelectorAll('.modal').forEach(modal => {
         }
     });
 });
+
+async function testAllAccounts() {
+    if (!confirm('确定要测试所有账号吗？这可能需要一些时间。')) return;
+
+    const btn = document.getElementById('testAllBtn');
+    const originalContent = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<svg class="icon spin"><use xlink:href="#icon-refresh"></use></svg> 测试中...';
+
+    try {
+        showToast('开始测试所有账号...', 'info');
+        const res = await apiFetch(`${API_BASE}/api/accounts/test-all`, {
+            method: 'POST'
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            showToast(`测试完成: 成功 ${data.results.success}, 失败 ${data.results.failed}`, 'success', 5000);
+            loadAccounts(); // 刷新列表显示最新状态
+        } else {
+            throw new Error(data.detail || '测试失败');
+        }
+    } catch (e) {
+        showToast('测试失败: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+    }
+}
+
+async function testAccount(id) {
+    const btn = document.querySelector(`button[onclick="testAccount(${id})"]`);
+    const originalContent = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="icon spin"><use xlink:href="#icon-refresh"></use></svg>';
+    }
+
+    try {
+        showToast(`正在测试账号 ${id}...`, 'info');
+        
+        const res = await apiFetch(`${API_BASE}/api/accounts/${id}/test`, {
+            method: 'POST'
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            showToast(`账号 ${id} 测试成功: 可用`, 'success');
+            loadAccounts();
+        } else {
+            throw new Error(data.detail || '测试失败');
+        }
+    } catch (e) {
+        showToast(`账号 ${id} 测试失败: ${e.message}`, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+        }
+    }
+}

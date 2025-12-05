@@ -1432,7 +1432,70 @@ def register_routes(app):
                 "detail": f"刷新过程出错: {str(e)}"
             }), 500
     
-    @app.route('/api/accounts/<int:account_id>/test', methods=['GET'])
+    @app.route('/api/accounts/test-all', methods=['POST'])
+    @require_admin
+    def test_all_accounts():
+        """测试所有账号"""
+        results = {
+            "success": 0,
+            "failed": 0,
+            "details": []
+        }
+        
+        accounts = account_manager.accounts
+        proxy = account_manager.config.get("proxy")
+        
+        for idx, account in enumerate(accounts):
+            try:
+                # 检查必要字段
+                secure_c_ses = account.get("secure_c_ses", "").strip()
+                csesidx = account.get("csesidx", "").strip()
+                
+                if not secure_c_ses or not csesidx:
+                    # 标记账号为不可用
+                    reason = "Cookie 信息不完整"
+                    account_manager.mark_account_unavailable(idx, reason)
+                    with account_manager.lock:
+                        account_manager.accounts[idx]["cookie_expired"] = True
+                        state = account_manager.account_states.get(idx, {})
+                        state["cookie_expired"] = True
+                    account_manager.save_config()
+                    raise ValueError(reason)
+                
+                # 尝试获取 JWT
+                get_jwt_for_account(account, proxy)
+                
+                results["success"] += 1
+                results["details"].append({
+                    "id": idx,
+                    "success": True,
+                    "message": "可用"
+                })
+                
+            except Exception as e:
+                results["failed"] += 1
+                error_msg = str(e)
+                
+                # 更新账号状态 (get_jwt_for_account 内部可能已经抛出特定异常，这里再次捕获处理以防万一)
+                if isinstance(e, AccountAuthError):
+                    account_manager.mark_account_unavailable(idx, error_msg)
+                elif isinstance(e, AccountRateLimitError):
+                    pt_wait = seconds_until_next_pt_midnight()
+                    cooldown = max(account_manager.rate_limit_cooldown, pt_wait)
+                    account_manager.mark_account_cooldown(idx, error_msg, cooldown)
+                
+                results["details"].append({
+                    "id": idx,
+                    "success": False,
+                    "message": error_msg
+                })
+                
+        return jsonify({
+            "success": True,
+            "results": results
+        })
+
+    @app.route('/api/accounts/<int:account_id>/test', methods=['GET', 'POST'])
     @require_admin
     def test_account(account_id):
         """测试账号JWT获取"""
