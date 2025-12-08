@@ -527,8 +527,11 @@ def register_routes(app):
                     proxy = get_proxy()
                     
                     for img in input_images:
+                        print(f"正在上传文件：{img}")
                         uploaded_file_id = upload_inline_file_to_gemini(jwt, session, team_id, img, proxy, account_idx)
                         if uploaded_file_id:
+                            print(f"文件：{img} 上传完成{uploaded_file_id}")
+                            time.sleep(3)
                             gemini_file_ids.append(uploaded_file_id)
                     
                     api_model_id = None
