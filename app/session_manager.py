@@ -63,11 +63,7 @@ def ensure_jwt_for_account(account_idx: int, account: dict):
                 state = account_manager.account_states[account_idx]
                 state["jwt"] = new_jwt
                 state["jwt_time"] = time.time()
-                # JWT 刷新后，清除旧的 session，因为新的 JWT 与旧的 session 不匹配
-                if state["session"] is not None:
-                    # 调试日志已关闭
-                    # print(f"[DEBUG][ensure_jwt_for_account] JWT已刷新，清除旧session: {state['session']}")
-                    state["session"] = None
+                # JWT 刷新后
                 jwt = new_jwt
         except Exception as e:
             # 调试日志已关闭
@@ -135,86 +131,45 @@ def create_chat_session(jwt: str, team_id: str, proxy: str, account_idx: Optiona
     return session_name
 
 
-def ensure_session_for_account(account_idx: int, account: dict, force_new: bool = False, conversation_id: Optional[str] = None):
-    """确保指定账号的会话有效
+def create_session_for_request(account_idx: int, account: dict) -> tuple[str, str, str]:
+    """为当次请求创建新的会话
     
     Args:
         account_idx: 账号索引
         account: 账号信息
-        force_new: 是否强制创建新 session（用于新对话）
-        conversation_id: 对话标识符（用于区分不同的对话）
+    
+    Returns:
+        tuple: (session_name, jwt, team_id)
     """
-    # 调试日志已关闭
-    # print(f"[DEBUG][ensure_session_for_account] 开始 - 账号索引: {account_idx}, force_new: {force_new}, conversation_id: {conversation_id}")
-    start_time = time.time()
-    
-    jwt_start = time.time()
     jwt = ensure_jwt_for_account(account_idx, account)
-    # 调试日志已关闭
-    # print(f"[DEBUG][ensure_session_for_account] JWT获取完成 - 耗时: {time.time() - jwt_start:.2f}秒")
+    team_id = account.get("team_id")
     
-    with account_manager.lock:
-        # 初始化对话 session 映射
-        if account_idx not in account_manager.conversation_sessions:
-            account_manager.conversation_sessions[account_idx] = {}
+    # 始终创建新 session
+    # 调试日志已关闭
+    # print(f"[DEBUG][create_session_for_request] 创建新session...")
+    
+    from .utils import get_proxy
+    proxy = get_proxy()
+    
+    session_start = time.time()
+    try:
+        session_name = create_chat_session(jwt, team_id, proxy, account_idx)
+    except Exception as e:
+        # 如果创建失败，尝试刷新 JWT 后重试一次
+        # print(f"[DEBUG][create_session_for_request] 创建session失败，尝试刷新JWT后重试: {e}")
+        with account_manager.lock:
+             # 强制清除 JWT
+             state = account_manager.account_states[account_idx]
+             state["jwt"] = None
         
-        # 如果有对话 ID，尝试使用该对话的 session（除非强制创建新 session）
-        if conversation_id and not force_new:
-            if conversation_id in account_manager.conversation_sessions[account_idx]:
-                session = account_manager.conversation_sessions[account_idx][conversation_id]
-                # 调试日志已关闭
-                # print(f"[DEBUG][ensure_session_for_account] 使用对话 {conversation_id} 的 session: {session}")
-                # 调试日志已关闭
-                # print(f"[DEBUG][ensure_session_for_account] 完成 - 总耗时: {time.time() - start_time:.2f}秒")
-                return session, jwt, account.get("team_id")
-        
-        state = account_manager.account_states[account_idx]
-        # 调试日志已关闭
-        # print(f"[DEBUG][ensure_session_for_account] 当前session状态: {state['session'] is not None}")
-        
-        # 如果需要强制创建新 session，或者当前没有 session，则创建新 session
-        if force_new or state["session"] is None:
-            if force_new and state["session"] is not None:
-                # 调试日志已关闭
-                # print(f"[DEBUG][ensure_session_for_account] 强制创建新session，旧session: {state['session']}")
-                pass
-            # 如果强制创建新 session，清除旧的 session 映射（如果有 conversation_id）
-            if force_new and conversation_id:
-                if conversation_id in account_manager.conversation_sessions[account_idx]:
-                    old_session = account_manager.conversation_sessions[account_idx][conversation_id]
-                    # 调试日志已关闭
-                    # print(f"[DEBUG][ensure_session_for_account] 清除对话 {conversation_id} 的旧 session: {old_session}")
-                    del account_manager.conversation_sessions[account_idx][conversation_id]
-            # 调试日志已关闭
-            # print(f"[DEBUG][ensure_session_for_account] 需要创建新session...")
-            from .utils import get_proxy
-            proxy = get_proxy()
-            team_id = account.get("team_id")
-            session_start = time.time()
-            new_session = create_chat_session(jwt, team_id, proxy, account_idx)
-            # 调试日志已关闭
-            # print(f"[DEBUG][ensure_session_for_account] Session创建完成 - 耗时: {time.time() - session_start:.2f}秒, session: {new_session}")
-            
-            # 如果有对话 ID，保存到对话 session 映射中
-            if conversation_id:
-                account_manager.conversation_sessions[account_idx][conversation_id] = new_session
-                # 调试日志已关闭
-                # print(f"[DEBUG][ensure_session_for_account] 已保存对话 {conversation_id} 的 session: {new_session}")
-            
-            # 更新默认 session（用于非新对话的情况）
-            state["session"] = new_session
-            session = new_session
-        else:
-            # 调试日志已关闭
-            # print(f"[DEBUG][ensure_session_for_account] 使用缓存session: {state['session']}")
-            session = state["session"]
-            # 如果有对话 ID，也保存到映射中（用于后续识别）
-            if conversation_id:
-                account_manager.conversation_sessions[account_idx][conversation_id] = session
-        
-        # 调试日志已关闭
-        # print(f"[DEBUG][ensure_session_for_account] 完成 - 总耗时: {time.time() - start_time:.2f}秒")
-        return state["session"], jwt, account.get("team_id")
+        # 重新获取 JWT (会触发刷新)
+        jwt = ensure_jwt_for_account(account_idx, account)
+        session_name = create_chat_session(jwt, team_id, proxy, account_idx)
+
+    # 调试日志已关闭
+    # print(f"[DEBUG][create_session_for_request] Session创建完成 - 耗时: {time.time() - session_start:.2f}秒, session: {session_name}")
+    
+    return session_name, jwt, team_id
 
 
 def upload_file_to_gemini(jwt: str, session_name: str, team_id: str, 
@@ -326,7 +281,6 @@ def upload_inline_file_to_gemini(jwt: str, session_name: str, team_id: str,
             filename = f"url_{uuid.uuid4().hex[:8]}{ext}"
         else:
             return None
-        
         return upload_file_to_gemini(jwt, session_name, team_id, file_content, filename, mime_type, proxy, account_idx)
     except AccountError:
         # 让账号相关错误向上抛出，以便触发冷却

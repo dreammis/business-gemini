@@ -46,7 +46,8 @@ from .auth import (
 from . import auth
 
 # 导入会话管理
-from .session_manager import ensure_session_for_account, upload_file_to_gemini, upload_inline_file_to_gemini, delete_chat_session
+from .session_manager import create_session_for_request, upload_file_to_gemini, upload_inline_file_to_gemini, \
+    delete_chat_session, ensure_jwt_for_account
 
 # 导入聊天处理
 from .chat_handler import (
@@ -131,153 +132,7 @@ def register_routes(app):
             })
         
         return jsonify({"object": "list", "data": models_data})
-    
-    @app.route('/v1/files', methods=['POST'])
-    @require_api_auth
-    def upload_file():
-        """OpenAI 兼容的文件上传接口"""
-        request_start_time = time.time()
-        print(f"\n{'='*60}")
-        print(f"[文件上传] ===== 接口调用开始 =====")
-        print(f"[文件上传] 请求时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        try:
-            if 'file' not in request.files:
-                return jsonify({"error": {"message": "No file provided", "type": "invalid_request_error"}}), 400
-            
-            file = request.files['file']
-            if file.filename == '':
-                return jsonify({"error": {"message": "No file selected", "type": "invalid_request_error"}}), 400
-            
-            file_content = file.read()
-            mime_type = file.content_type or mimetypes.guess_type(file.filename)[0] or 'application/octet-stream'
-            
-            available_accounts = account_manager.get_available_accounts()
-            if not available_accounts:
-                next_cd = account_manager.get_next_cooldown_info()
-                wait_msg = ""
-                if next_cd:
-                    wait_msg = f"（最近冷却账号 {next_cd['index']}，约 {int(next_cd['cooldown_until']-time.time())} 秒后可重试）"
-                return jsonify({"error": {"message": f"没有可用的账号{wait_msg}", "type": "rate_limit"}}), 429
 
-            max_retries = len(available_accounts)
-            last_error = None
-            gemini_file_id = None
-            
-            for retry_idx in range(max_retries):
-                account_idx = None
-                try:
-                    account_idx, account = account_manager.get_next_account()
-                    session, jwt, team_id = ensure_session_for_account(account_idx, account)
-                    from .utils import get_proxy
-                    proxy = get_proxy()
-                    gemini_file_id = upload_file_to_gemini(jwt, session, team_id, file_content, file.filename, mime_type, proxy)
-                    
-                    if gemini_file_id:
-                        openai_file_id = f"file-{uuid.uuid4().hex[:24]}"
-                        file_manager.add_file(
-                            openai_file_id=openai_file_id,
-                            gemini_file_id=gemini_file_id,
-                            session_name=session,
-                            filename=file.filename,
-                            mime_type=mime_type,
-                            size=len(file_content)
-                        )
-                        return jsonify({
-                            "id": openai_file_id,
-                            "object": "file",
-                            "bytes": len(file_content),
-                            "created_at": int(time.time()),
-                            "filename": file.filename,
-                            "purpose": request.form.get('purpose', 'assistants')
-                        })
-                
-                except AccountRateLimitError as e:
-                    last_error = e
-                    if account_idx is not None:
-                        pt_wait = seconds_until_next_pt_midnight()
-                        cooldown_seconds = max(account_manager.rate_limit_cooldown, pt_wait)
-                        account_manager.mark_account_cooldown(account_idx, str(e), cooldown_seconds)
-                    continue
-                except AccountAuthError as e:
-                    last_error = e
-                    if account_idx is not None:
-                        error_msg = str(e).lower()
-                        if "session is not owned" in error_msg or "not owned by the provided user" in error_msg:
-                            with account_manager.lock:
-                                state = account_manager.account_states.get(account_idx)
-                                if state and state.get("session"):
-                                    state["session"] = None
-                        account_manager.mark_account_unavailable(account_idx, str(e))
-                        account_manager.mark_account_cooldown(account_idx, str(e), account_manager.auth_error_cooldown)
-                    continue
-                except AccountRequestError as e:
-                    last_error = e
-                    if account_idx is not None:
-                        account_manager.mark_account_cooldown(account_idx, str(e), account_manager.generic_error_cooldown)
-                    continue
-                except NoAvailableAccount as e:
-                    last_error = e
-                    break
-                except Exception as e:
-                    last_error = e
-                    if account_idx is None:
-                        break
-                    continue
-            
-            status_code = 429 if isinstance(last_error, (AccountRateLimitError, NoAvailableAccount)) else 500
-            err_type = "rate_limit" if status_code == 429 else "api_error"
-            return jsonify({"error": {"message": f"文件上传失败: {last_error or '没有可用的账号'}", "type": err_type}}), status_code
-            
-        except Exception as e:
-            return jsonify({"error": {"message": str(e), "type": "api_error"}}), 500
-    
-    @app.route('/v1/files', methods=['GET'])
-    @require_api_auth
-    def list_files():
-        """获取已上传文件列表"""
-        files = file_manager.list_files()
-        return jsonify({
-            "object": "list",
-            "data": [{
-                "id": f["openai_file_id"],
-                "object": "file",
-                "bytes": f.get("size", 0),
-                "created_at": f.get("created_at", int(time.time())),
-                "filename": f.get("filename", ""),
-                "purpose": "assistants"
-            } for f in files]
-        })
-    
-    @app.route('/v1/files/<file_id>', methods=['GET'])
-    @require_api_auth
-    def get_file(file_id):
-        """获取文件信息"""
-        file_info = file_manager.get_file(file_id)
-        if not file_info:
-            return jsonify({"error": {"message": "File not found", "type": "invalid_request_error"}}), 404
-        
-        return jsonify({
-            "id": file_info["openai_file_id"],
-            "object": "file",
-            "bytes": file_info.get("size", 0),
-            "created_at": file_info.get("created_at", int(time.time())),
-            "filename": file_info.get("filename", ""),
-            "purpose": "assistants"
-        })
-    
-    @app.route('/v1/files/<file_id>', methods=['DELETE'])
-    @require_api_auth
-    def delete_file_route(file_id):
-        """删除文件"""
-        if file_manager.delete_file(file_id):
-            return jsonify({
-                "id": file_id,
-                "object": "file",
-                "deleted": True
-            })
-        return jsonify({"error": {"message": "File not found", "type": "invalid_request_error"}}), 404
-    
     @app.route('/v1/chat/completions', methods=['POST'])
     @require_api_auth
     def chat_completions():
@@ -434,55 +289,9 @@ def register_routes(app):
                 if next_cd:
                     wait_msg = f"（最近冷却账号 {next_cd['index']}，约 {int(next_cd['cooldown_until']-time.time())} 秒后可重试）"
                 return jsonify({"error": f"没有可用的账号{wait_msg}"}), 429
-
-            max_retries = len(available_accounts)
-            last_error = None
-            chat_response = None
-            successful_account_idx = None
             
-            # 优先使用前端传递的 conversation_id 和 is_new_conversation
-            conversation_id = data.get('conversation_id')
-            is_new_conversation = data.get('is_new_conversation', False)
-            
-            # 如果前端没有传递 conversation_id，则根据消息内容自动生成
-            # 注意：对于其他客户端（如 Cursor、Cherry Studio），如果没有传递 conversation_id，
-            # 我们使用第一条用户消息内容生成稳定的 ID，确保同一对话的后续请求使用相同的 ID
-            if not conversation_id and messages:
-                user_count = sum(1 for msg in messages if msg.get('role') == 'user')
-                assistant_count = sum(1 for msg in messages if msg.get('role') == 'assistant')
-                system_count = sum(1 for msg in messages if msg.get('role') == 'system')
-                total_count = len(messages)
-                last_is_user = messages and messages[-1].get('role') == 'user'
-                first_user_msg = next((msg for msg in messages if msg.get('role') == 'user'), None)
-                
-                # 判断是否为新对话：只有第一条用户消息且没有 assistant 回复才是新对话
-                # 如果有多条消息或已有 assistant 回复，说明是继续对话
-                is_new_conversation = (user_count == 1 and assistant_count == 0 and total_count == 1)
-                
-                if first_user_msg:
-                    # 始终使用第一条用户消息内容生成稳定的 ID（不包含时间戳）
-                    # 这样同一对话的后续请求会使用相同的 ID，即使客户端没有传递 conversation_id
-                    content = str(first_user_msg.get('content', ''))
-                    # 如果内容是数组（包含文件等），提取文本部分
-                    if isinstance(first_user_msg.get('content'), list):
-                        text_parts = []
-                        for item in first_user_msg.get('content', []):
-                            if isinstance(item, dict):
-                                if item.get('type') == 'text':
-                                    text_parts.append(str(item.get('text', '')))
-                                elif item.get('type') == 'file':
-                                    # 文件类型也参与ID生成，确保唯一性
-                                    file_id = item.get('file', {}).get('id') or item.get('file_id', '')
-                                    text_parts.append(f"file:{file_id}")
-                        content = '|'.join(text_parts) if text_parts else str(first_user_msg.get('content', ''))
-                    conversation_id = hashlib.md5(content.encode('utf-8')).hexdigest()[:16]
-                
-                if is_new_conversation:
-                    print(f"[聊天] 检测到新对话（user={user_count}, assistant={assistant_count}, system={system_count}, total={total_count}），对话ID: {conversation_id}，将创建新的 session")
-                elif conversation_id:
-                    print(f"[聊天] 继续对话，对话ID: {conversation_id}")
-            elif conversation_id:
-                print(f"[聊天] 使用前端传递的对话ID: {conversation_id}, 新对话: {is_new_conversation}")
+            # 移除 conversation_id 复用逻辑
+            # 每一次请求，负载账号，都新建 session
             
             preferred_account_idx = None
             if selected_model_config and "account_index" in selected_model_config:
@@ -492,14 +301,15 @@ def register_routes(app):
                         preferred_account_idx = preferred_account_idx
                     else:
                         preferred_account_idx = None
-            
+
             try_without_model_id = is_auto_model
             
             # 检测是否是图片生成请求
             is_image_model = selected_model_config and selected_model_config.get("id") == "gemini-image"
             # 如果使用默认工具集，也可能生成图片，需要检查图片配额
             # 但为了性能，只在明确是图片模型时检查，普通模型在生成图片后再检查
-            
+            max_retries = len(available_accounts)
+
             for retry_idx in range(max_retries):
                 account_idx = None
                 try:
@@ -521,16 +331,17 @@ def register_routes(app):
                     else:
                         # 根据请求类型选择对应配额类型可用的账号
                         account_idx, account = account_manager.get_next_account(required_quota_type)
-                    
-                    session, jwt, team_id = ensure_session_for_account(account_idx, account, force_new=is_new_conversation, conversation_id=conversation_id)
+
+                    session, jwt, team_id = create_session_for_request(account_idx, account)
                     from .utils import get_proxy
                     proxy = get_proxy()
                     
                     for img in input_images:
                         print(f"正在上传文件：{img}")
+                        # jwt = ensure_jwt_for_account(account_idx, account)
                         uploaded_file_id = upload_inline_file_to_gemini(jwt, session, team_id, img, proxy, account_idx)
                         if uploaded_file_id:
-                            print(f"文件：{img} 上传完成{uploaded_file_id}")
+                            print(f"文件：{img} 上传完成 - {uploaded_file_id}")
                             time.sleep(3)
                             gemini_file_ids.append(uploaded_file_id)
                     
@@ -550,6 +361,7 @@ def register_routes(app):
                     
                     # ✅ 流式模式：使用真正的流式生成器（边接收边解析边转发）
                     # 非流式模式：使用原来的函数（先收集完整响应再返回）
+                    # jwt = ensure_jwt_for_account(account_idx, account)
                     if stream:
                         # 准备流式生成器的参数
                         chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
@@ -618,12 +430,8 @@ def register_routes(app):
                     if "500" in error_str or "internal error" in error_str:
                         cooldown_time = 30
                         if account_idx is not None:
-                            with account_manager.lock:
-                                state = account_manager.account_states.get(account_idx)
-                                if state and state.get("session"):
-                                    state["session"] = None
-                                if account_idx in account_manager.conversation_sessions:
-                                    account_manager.conversation_sessions[account_idx] = {}
+                            # formerly cleared session here
+                            pass
                         try_without_model_id = True
                     else:
                         cooldown_time = account_manager.generic_error_cooldown
@@ -973,11 +781,6 @@ def register_routes(app):
         if is_admin_authenticated():
             return redirect('/')
         return render_template('login.html')
-    
-    @app.route('/chat_history.html')
-    def chat_history():
-        """返回聊天记录页面（可独立访问，无需登录）"""
-        return render_template('chat_history.html')
     
     @app.route('/account_extractor.html')
     def account_extractor():
@@ -1467,6 +1270,9 @@ def register_routes(app):
                 
                 # 尝试获取 JWT
                 get_jwt_for_account(account, proxy)
+                
+                # 测试成功，标记账号为可用
+                account_manager.mark_account_available(idx)
                 
                 results["success"] += 1
                 results["details"].append({

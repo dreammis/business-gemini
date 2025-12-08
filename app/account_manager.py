@@ -22,8 +22,7 @@ class AccountManager:
         self.config = None
         self.accounts = []  # 账号列表
         self.current_index = 0  # 当前轮训索引
-        self.account_states = {}  # 账号状态: {index: {jwt, jwt_time, session, available, cooldown_until, cooldown_reason, quota_usage, quota_reset_date}}
-        self.conversation_sessions = {}  # 对话 session 映射: {account_idx: {conversation_id: session_name}}
+        self.account_states = {}  # 账号状态: {index: {jwt, jwt_time, available, cooldown_until, cooldown_reason, quota_usage, quota_reset_date}}
         self.lock = threading.Lock()
         self.auth_error_cooldown = AUTH_ERROR_COOLDOWN_SECONDS
         self.rate_limit_cooldown = RATE_LIMIT_COOLDOWN_SECONDS
@@ -179,7 +178,6 @@ class AccountManager:
                         self.account_states[i] = {
                             "jwt": None,
                             "jwt_time": 0,
-                            "session": None,
                             "available": available,
                             "cooldown_until": acc.get("cooldown_until"),
                             "cooldown_reason": acc.get("unavailable_reason") or acc.get("cooldown_reason") or "",
@@ -376,6 +374,35 @@ class AccountManager:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
     
+    def mark_account_available(self, index: int):
+        """标记账号为可用"""
+        need_save = False
+        with self.lock:
+            if 0 <= index < len(self.accounts):
+                self.accounts[index]["available"] = True
+                self.accounts[index].pop("unavailable_reason", None)
+                self.accounts[index].pop("unavailable_time", None)
+                
+                # 更新内存状态
+                state = self.account_states[index]
+                state["available"] = True
+                state.pop("cooldown_until", None)
+                state.pop("cooldown_reason", None)
+                self.accounts[index].pop("cooldown_until", None)
+                
+                # 如果 cookie_expired 为 True，但现在检测成功了，也重置它
+                if self.accounts[index].get("cookie_expired"):
+                    self.accounts[index]["cookie_expired"] = False
+                    self.accounts[index].pop("cookie_expired_time", None)
+                    state["cookie_expired"] = False
+                    print(f"[!] 账号 {index} 重新标记为可用，即使之前标记为 Cookie 过期")
+                
+                need_save = True
+                print(f"[!] 账号 {index} 已标记为可用")
+        
+        if need_save:
+            self.save_config()
+
     def mark_account_unavailable(self, index: int, reason: str = ""):
         """标记账号不可用"""
         need_save = False
@@ -534,7 +561,6 @@ class AccountManager:
                     state["cooldown_reason"] = reason
                     state["jwt"] = None
                     state["jwt_time"] = 0
-                    state["session"] = None
 
                     # 在配置中记录冷却信息，便于前端展示
                     self.accounts[index]["cooldown_until"] = until
@@ -593,7 +619,6 @@ class AccountManager:
                 state["cooldown_reason"] = reason
                 state["jwt"] = None
                 state["jwt_time"] = 0
-                state["session"] = None
 
                 # 在配置中记录冷却信息，便于前端展示
                 self.accounts[index]["cooldown_until"] = until
