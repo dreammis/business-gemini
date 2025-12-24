@@ -265,11 +265,9 @@ if __name__ == '__main__':
             except Exception:
                 pass
         print(f"      管理界面: http://127.0.0.1:{port}/")
-        print(f"      聊天界面: http://127.0.0.1:{port}/chat_history.html")
     else:
         print(f"[启动] 服务地址: http://{host}:{port}")
         print(f"[启动] 管理界面: http://{host}:{port}/")
-        print(f"[启动] 聊天界面: http://{host}:{port}/chat_history.html")
     print()
     
     # 使用 SocketIO 运行应用（支持 WebSocket）

@@ -210,9 +210,18 @@ def register_routes(app):
                     return match.group(1).strip()
                 return text
             
+            system_prompts = []
             for msg in messages:
-                if msg.get('role') == 'user':
-                    content = msg.get('content', '')
+                role = msg.get('role')
+                content = msg.get('content', '')
+                
+                # 提取 System Prompt
+                if role == 'system':
+                    if isinstance(content, str) and content:
+                        system_prompts.append(content)
+                    continue
+
+                if role == 'user':
                     text, images = extract_images_from_openai_content(content)
                     if text:
                         user_message = extract_user_query(text)
@@ -220,22 +229,24 @@ def register_routes(app):
                     
                     if isinstance(content, list):
                         for item in content:
-                            if isinstance(item, dict):
-                                if item.get('type') == 'file' and item.get('file_id'):
+                            if not isinstance(item, dict):
+                                continue
+                                
+                            item_type = item.get('type')
+                            if item_type == 'file':
+                                if item.get('file_id'):
                                     input_file_ids.append(item['file_id'])
-                                elif item.get('type') == 'file' and isinstance(item.get('file'), dict):
-                                    file_obj = item['file']
-                                    fid = file_obj.get('file_id') or file_obj.get('id')
-                                    if fid:
-                                        input_file_ids.append(fid)
-                                # 新增：支持 file_url
-                                elif item.get('type') == 'file' and item.get('file_url'):
-                                    # 将 file_url 视为需要下载的内联文件
-                                    # 暂时存入 input_images 列表（虽然名字叫 images，但 upload_inline_file_to_gemini 支持所有类型）
+                                elif item.get('file_url'):
+                                    # 支持 file_url
                                     input_images.append({
                                         "type": "url",
                                         "file_url": item.get('file_url')
                                     })
+                                elif isinstance(item.get('file'), dict):
+                                    file_obj = item['file']
+                                    fid = file_obj.get('file_id') or file_obj.get('id')
+                                    if fid:
+                                        input_file_ids.append(fid)
             
             for prompt in prompts:
                 if prompt.get('role') == 'user':
@@ -250,6 +261,14 @@ def register_routes(app):
                         images_from_files = extract_images_from_files_array(files_array)
                         input_images.extend(images_from_files)
             
+            # 合并 System Prompt 到 User Message
+            if system_prompts:
+                system_text = "\n\n".join(system_prompts)
+                if user_message:
+                    user_message = f"{system_text}\n\n{user_message}"
+                else:
+                    user_message = system_text
+
             gemini_file_ids = []
             for fid in input_file_ids:
                 if not fid:
