@@ -492,13 +492,16 @@ class AccountManager:
                 
                 # 429 通常是配额超限，按配额类型冷却到第二天 PT 午夜；401/403 是认证错误，冷却整个账号（短时间）
                 if status_code == 429:
-                    # 如果是配额错误且指定了配额类型，冷却到第二天 PT 午夜
-                    if quota_type:
-                        from .utils import seconds_until_next_pt_midnight
-                        cooldown_seconds = seconds_until_next_pt_midnight(now_ts)
-                    else:
-                        # 未指定配额类型，使用短时间冷却
-                        cooldown_seconds = self.rate_limit_cooldown
+                    # 原逻辑：指定配额类型时冷却到午夜（暂时注释掉，未来可能恢复）
+                    # if quota_type:
+                    #     from .utils import seconds_until_next_pt_midnight
+                    #     cooldown_seconds = seconds_until_next_pt_midnight(now_ts)
+                    # else:
+                    #     # 未指定配额类型，使用短时间冷却
+                    #     cooldown_seconds = self.rate_limit_cooldown
+                    
+                    # 新逻辑：统一使用短时间冷却（5分钟）
+                    cooldown_seconds = self.rate_limit_cooldown
                 elif status_code in (401, 403):
                     # 认证错误，使用短时间冷却
                     cooldown_seconds = self.auth_error_cooldown
@@ -541,9 +544,11 @@ class AccountManager:
                     
                     # 格式化冷却时间显示
                     if status_code == 429 and quota_type:
-                        hours = cooldown_seconds // 3600
-                        minutes = (cooldown_seconds % 3600) // 60
-                        print(f"[!] 账号 {index} {quota_type} 配额错误 (HTTP {status_code})，该类型进入冷却直到第二天 PT 午夜（约 {hours} 小时 {minutes} 分钟）")
+                        # 原逻辑：显示冷却到午夜（暂时注释掉）
+                        # hours = cooldown_seconds // 3600
+                        # minutes = (cooldown_seconds % 3600) // 60
+                        # print(f"[!] 账号 {index} {quota_type} 配额错误 (HTTP {status_code})，该类型进入冷却直到第二天 PT 午夜（约 {hours} 小时 {minutes} 分钟）")
+                        print(f"[!] 账号 {index} {quota_type} 配额错误 (HTTP {status_code})，该类型进入冷却 {cooldown_seconds} 秒")
                     else:
                         print(f"[!] 账号 {index} {quota_type} 配额错误 (HTTP {status_code})，该类型进入冷却 {cooldown_seconds} 秒")
                 else:

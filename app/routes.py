@@ -406,9 +406,13 @@ def register_routes(app):
                 except AccountRateLimitError as e:
                     last_error = e
                     if account_idx is not None:
-                        pt_wait = seconds_until_next_pt_midnight()
-                        cooldown_seconds = max(account_manager.rate_limit_cooldown, pt_wait)
-                        account_manager.mark_account_cooldown(account_idx, str(e), cooldown_seconds)
+                        # 原逻辑：等待直到明天（暂时注释掉，未来可能恢复）
+                        # pt_wait = seconds_until_next_pt_midnight()
+                        # cooldown_seconds = max(account_manager.rate_limit_cooldown, pt_wait)
+                        # account_manager.mark_account_cooldown(account_idx, str(e), cooldown_seconds)
+                        
+                        # 新逻辑：统一使用短时间冷却（5分钟）
+                        account_manager.mark_account_cooldown(account_idx, str(e), account_manager.rate_limit_cooldown)
                     continue
                 except AccountAuthError as e:
                     last_error = e
